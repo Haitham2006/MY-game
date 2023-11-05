@@ -1,0 +1,344 @@
+import pygame
+import sys
+import random
+import time
+import logging
+import os
+
+# Configure the logging module to save logs to a file
+logging.basicConfig(filename='game_log.txt', level=logging.DEBUG)
+
+# Initialize Pygame
+pygame.init()
+
+# Define a function to handle resource paths
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# Set the screen dimensions and frames per second
+WIDTH, HEIGHT = 1920, 1080
+FPS = 60  # Make sure to keep this consistent
+
+# Initialize the screen
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("pac-man dalia edition")
+
+# Load the custom player image
+try:
+    player_image = pygame.image.load(resource_path('sss.png')).convert_alpha()
+    player_image = pygame.transform.scale(player_image, (50, 50))
+except pygame.error as e:
+    logging.error(f"Error loading player image: {e}")
+    sys.exit()
+
+# Load the custom enemy image
+try:
+    enemy_image = pygame.image.load(resource_path('Ryan.jpg')).convert_alpha()
+    enemy_image = pygame.transform.scale(enemy_image, (50, 50))
+except pygame.error as e:
+    logging.error(f"Error loading enemy image: {e}")
+    sys.exit()
+
+# Create circular masks for player and enemy images
+player_mask = pygame.Surface((50, 50), pygame.SRCALPHA)
+pygame.draw.circle(player_mask, (255, 255, 255, 255), (25, 25), 25)
+
+enemy_mask = pygame.Surface((50, 50), pygame.SRCALPHA)
+pygame.draw.circle(enemy_mask, (255, 255, 255, 255), (25, 25), 25)
+
+# Apply masks to player and enemy images
+player_image.blit(player_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+enemy_image.blit(enemy_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+# Load background image
+try:
+    background_image = pygame.image.load(resource_path('bg.jpg'))
+    background_image = pygame.transform.scale(background_image, (WIDTH, HEIGHT))
+except pygame.error as e:
+    logging.error(f"Error loading background image: {e}")
+    sys.exit()
+
+player_x, player_y = WIDTH // 2, HEIGHT // 2
+player_radius = 25
+
+enemy_x, enemy_y = random.randint(0, WIDTH - player_radius * 2), random.randint(0, HEIGHT - player_radius * 2)
+enemy_radius = 25
+enemy_speed = 3
+
+collectible_x, collectible_y = random.randint(0, WIDTH - player_radius * 2), random.randint(0, HEIGHT - player_radius * 2)
+collectible_radius = 10
+collectible_color = (255, 255, 0)
+collectible_collected = False
+
+# Use Pygame's built-in clock for frame rate control
+clock = pygame.time.Clock()
+
+# Define game states
+IN_MENU = 0
+IN_GAME = 1
+PAUSED = 2
+GAME_OVER = 3
+OPTIONS = 4
+current_state = IN_MENU
+
+font = pygame.font.Font(None, 36)
+menu_text_color = (255, 255, 255)
+
+# Options menu settings
+options_menu_font = pygame.font.Font(None, 24)
+options_menu_color = (255, 255, 255)
+options_text_color = (255, 255, 255)
+fullscreen = False
+resolutions = [(800, 600), (1024, 768), (1280, 720), (1920, 1080)]
+current_resolution = 0
+
+# Define button rectangles for the options menu
+back_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2 + 20, 100, 40)
+resolution_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2 - 40, 250, 40)
+fullscreen_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2 + 40, 150, 40)
+
+running = True
+paused = False
+resume_timer = 3
+resume_font = pygame.font.Font(None, 48)
+resume_delay = 2
+
+level = 1
+score = 0
+
+# Variables for the portal and collectibles
+portals = []
+num_collectibles = 5
+collectible_positions = []
+collectibles = collectible_positions.copy()
+
+# Main game loop
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        # Handle events based on the game state
+        if current_state == IN_MENU:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if options_button_rect.collidepoint(event.pos):
+                    current_state = OPTIONS
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    current_state = IN_GAME
+
+        elif current_state == OPTIONS:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if back_button_rect.collidepoint(event.pos):
+                    current_state = IN_MENU
+                elif resolution_button_rect.collidepoint(event.pos):
+                    current_resolution = (current_resolution + 1) % len(resolutions)
+                    WIDTH, HEIGHT = resolutions[current_resolution]
+                    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN if fullscreen else 0)
+                    background_image = pygame.transform.scale(background_image, (WIDTH, HEIGHT))
+                elif fullscreen_button_rect.collidepoint(event.pos):
+                    fullscreen = not fullscreen
+                    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN if fullscreen else 0)
+
+    keys = pygame.key.get_pressed()
+
+    if current_state == IN_MENU:
+        # Draw menu
+        screen.blit(background_image, (0, 0))
+
+        # Main menu text
+        menu_text = font.render("Press SPACE to Start", True, menu_text_color)
+        screen.blit(menu_text, (WIDTH // 2 - menu_text.get_width() // 2, HEIGHT // 2 - menu_text.get_height() // 2))
+
+        # Options button
+        options_button_rect = pygame.Rect(WIDTH // 2 - 75, HEIGHT // 2 + 50, 150, 50)
+        pygame.draw.rect(screen, (0, 0, 0), options_button_rect)
+        options_button_text = font.render("Options", True, menu_text_color)
+        screen.blit(options_button_text,
+                    (WIDTH // 2 - options_button_text.get_width() // 2, HEIGHT // 2 + 75 - options_button_text.get_height() // 2))
+
+
+
+    elif current_state == OPTIONS:
+
+        # Draw options menu
+
+        screen.fill((0, 0, 0))  # Change background color to improve text readability
+
+        # Options menu title
+
+        options_menu_title = font.render("Options Menu", True, options_menu_color)
+
+        options_menu_title_rect = options_menu_title.get_rect(center=(WIDTH // 2, HEIGHT // 4 + 20))
+
+        screen.blit(options_menu_title, options_menu_title_rect)
+
+        # Back button
+
+        back_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2  + 20, 50, 40)
+
+        pygame.draw.rect(screen, (255, 255, 255), back_button_rect)  # Set button color
+
+        back_button_text = options_menu_font.render("Back", True, (0, 0, 0))  # Set text color
+
+        back_button_text_rect = back_button_text.get_rect(center=back_button_rect.center)
+
+        screen.blit(back_button_text, back_button_text_rect)
+
+        # Resolution button
+
+        resolution_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2 - 40, 350, 40)
+
+        pygame.draw.rect(screen, (255, 255, 255), resolution_button_rect)  # Set button color
+
+        resolution_button_text = options_menu_font.render("Change Resolution", True, (0, 0, 0))  # Set text color
+
+        resolution_button_text_rect = resolution_button_text.get_rect(center=resolution_button_rect.center)
+
+        screen.blit(resolution_button_text, resolution_button_text_rect)
+
+        # Fullscreen button
+
+        fullscreen_button_rect = pygame.Rect(WIDTH // 4 + 20, HEIGHT // 2 + 80, 150, 40)
+
+        pygame.draw.rect(screen, (255, 255, 255), fullscreen_button_rect)  # Set button color
+
+        fullscreen_button_text = options_menu_font.render("Toggle Fullscreen", True, (0, 0, 0))  # Set text color
+
+        fullscreen_button_text_rect = fullscreen_button_text.get_rect(center=fullscreen_button_rect.center)
+
+        screen.blit(fullscreen_button_text, fullscreen_button_text_rect)
+
+        fullscreen_text = options_menu_font.render(f"Fullscreen: {'On' if fullscreen else 'Off'}", True,
+                                                   (255, 255, 255))
+
+        fullscreen_text_rect = fullscreen_text.get_rect(center=(WIDTH // 4 + 40, HEIGHT // 2 + 150))
+
+        screen.blit(fullscreen_text, fullscreen_text_rect)
+
+    elif current_state == IN_GAME:
+        if not paused:
+            # Clear previous movement
+            player_move_x = 0
+            player_move_y = 0
+
+            if keys[pygame.K_LEFT]:
+                player_move_x = -5
+            elif keys[pygame.K_RIGHT]:
+                player_move_x = 5
+            elif keys[pygame.K_UP]:
+                player_move_y = -5
+            elif keys[pygame.K_DOWN]:
+                player_move_y = 5
+
+            player_x += player_move_x
+            player_y += player_move_y
+
+            player_x = max(player_radius, min(player_x, WIDTH - player_radius))
+            player_y = max(player_radius, min(player_y, HEIGHT - player_radius))
+
+            # Move the enemy towards the player
+            if abs(player_x - enemy_x) > abs(player_y - enemy_y):
+                if player_x < enemy_x:
+                    enemy_x -= enemy_speed
+                elif player_x > enemy_x:
+                    enemy_x += enemy_speed
+            else:
+                if player_y < enemy_y:
+                    enemy_y -= enemy_speed
+                elif player_y > enemy_y:
+                    enemy_y += enemy_speed
+
+            # Check if the level is completed (e.g., player collects all collectibles)
+            if len(collectibles) == 0:
+                level += 1
+                portals.append((random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50)))
+                collectible_positions = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50)) for _ in range(num_collectibles)]
+                collectibles = collectible_positions.copy()
+
+            # Collision check with the enemy
+            if (player_x - player_radius < enemy_x + enemy_radius and player_x + player_radius > enemy_x
+                    and player_y - player_radius < enemy_y + enemy_radius and player_y + player_radius > enemy_y):
+                current_state = GAME_OVER
+
+            # Check if the player collects a collectible
+            for i, collectible in enumerate(collectibles):
+                if (abs(player_x - collectible[0]) < player_radius + collectible_radius
+                        and abs(player_y - collectible[1]) < player_radius + collectible_radius):
+                    del collectibles[i]
+                    score += 10
+                    break
+
+            # Check if the player reaches a portal
+            for portal_x, portal_y in portals:
+                if (abs(player_x - portal_x) < player_radius + 10 and abs(player_y - portal_y) < player_radius + 10):
+                    current_state = IN_GAME
+
+        screen.blit(background_image, (0, 0))
+
+        # Draw player with circular image
+        player_rect = player_image.get_rect(center=(player_x, player_y))
+        screen.blit(player_image, player_rect)
+
+        # Draw enemy with circular image
+        enemy_rect = enemy_image.get_rect(center=(enemy_x, enemy_y))
+        screen.blit(enemy_image, enemy_rect)
+
+        # Draw collectibles
+        for collectible in collectibles:
+            pygame.draw.circle(screen, collectible_color, collectible, collectible_radius)
+
+        # Draw portals
+        for portal_x, portal_y in portals:
+            pygame.draw.circle(screen, (255, 0, 0), (portal_x, portal_y), 10)
+
+        # Display the score
+        score_text = font.render(f"Score: {score}", True, (0, 255, 0))
+        screen.blit(score_text, (10, 10))
+
+        # Pause the game when the Esc key is pressed
+        if keys[pygame.K_ESCAPE]:
+            paused = True
+            current_state = PAUSED
+            resume_timer = 3
+            resume_delay = 2
+
+    elif current_state == GAME_OVER:
+        screen.blit(background_image, (0, 0))
+        game_over_text = font.render("Game Over - Press SPACE to Retry", True, menu_text_color)
+        screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 2 - game_over_text.get_height() // 2))
+
+        if keys[pygame.K_SPACE]:
+            # Reset game variables for level 1
+            level = 1
+            score = 0
+            player_x, player_y = WIDTH // 2, HEIGHT // 2
+            enemy_x, enemy_y = random.randint(0, WIDTH - player_radius * 2), random.randint(0, HEIGHT - player_radius * 2)
+            portals = []
+            collectible_positions = [(random.randint(50, WIDTH - 50), random.randint(50, HEIGHT - 50)) for _ in range(num_collectibles)]
+            collectibles = collectible_positions.copy()
+            current_state = IN_GAME
+
+    elif current_state == PAUSED:
+        if resume_delay <= time.time():
+            screen.blit(background_image, (0, 0))
+            paused_text = font.render(f"Paused - Resume in {resume_timer}...", True, menu_text_color)
+            screen.blit(paused_text, (WIDTH // 2 - paused_text.get_width() // 2, HEIGHT // 2 - paused_text.get_height() // 2))
+
+            # Countdown timer logic
+            if resume_timer > 0:
+                resume_timer -= 1
+            else:
+                paused = False
+                current_state = IN_GAME
+
+    pygame.display.flip()
+    clock.tick(FPS)  # Cap the frame rate at 60 FPS
+
+# Quit Pygame and exit
+pygame.quit()
+sys.exit()
